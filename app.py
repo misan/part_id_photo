@@ -162,23 +162,32 @@ if pts is None:
 obs = resample_polyline(pts.astype(np.float32), N_RESAMPLE)
 obs = normalize_contour(obs)
 obs_fd = fourier_descriptor(obs)
+# --- After you compute `obs_contour` / `obs_pts` from the captured image ---
 
-# Stage 1: coarse by Fourier descriptor
-scores = []
-for t in templates:
-    d = float(np.linalg.norm(obs_fd - t['fd']))
-    scores.append((d, t))
-scores.sort(key=lambda x: x[0])
-short = scores[:25]
+if obs_pts is None or len(obs_pts) < 50:
+    st.error("No usable silhouette found. Try: higher contrast background, less shadow, keep the whole part in frame.")
+    st.stop()
 
-# Stage 2: chamfer verification (rotation-only)
+# --- Stage 1: shortlist ---
+candidates = shortlist_candidates(obs_pts, templates, k=30)  # or whatever you use
+
+if candidates is None or len(candidates) == 0:
+    st.error("No candidate templates matched basic filters. Try retaking the photo with better contrast and less tilt.")
+    st.stop()
+
+# --- Stage 2: verification ---
 verified = []
-for d0, t in short:
-    d = best_rotation_chamfer(obs, t['pts'])
-    verified.append((d, d0, t))
+for cand in candidates:
+    score = verify_match(obs_pts, cand["pts"])  # or your method
+    verified.append((score, cand))
+
 verified.sort(key=lambda x: x[0])
 
-best = verified[0]
+if len(verified) == 0:
+    st.error("Verification produced no results. Retake the photo (flat, high contrast) or relax filters.")
+    st.stop()
+
+best_score, best = verified[0]
 second = verified[1] if len(verified) > 1 else None
 
 # Confidence heuristic
